@@ -1,0 +1,250 @@
+esphome:
+  name: air-gradient
+  platform: ESP8266
+  board: d1_mini
+
+  project:
+    name: seansaleh.ESPHome-For-AirGradient
+    version: "1.0"
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  password: !secret ota_password
+
+ota:
+  password: !secret ota_password
+
+globals:
+  - id: is_calibrating_co2
+    type: bool
+    initial_value: 'false'
+
+switch:
+  # The logic here is to make sure you don't start multiple calibrations at once,
+  # and that the switch reflects the state of the running calibration
+  - platform: template
+    name: "Manually Calibrate CO2 Sensor"
+    id : "calibrate_co2_sensor"
+    restore_state: no
+    lambda: return id(is_calibrating_co2);
+    turn_on_action:
+        - if:
+            condition:
+              switch.is_on: calibrate_co2_sensor
+            then:
+              - logger.log: "Switch is already on, ignoring request"
+            else:
+              - lambda: id(is_calibrating_co2) = true;
+              - senseair.background_calibration: senseair_sensor
+              - logger.log: "CO2 Sensor Calibration Triggered! Must be done OUTDOORS!"
+              - delay: 120s # was 120s
+              - logger.log: "Getting background_calibration_result"
+              - senseair.background_calibration_result: senseair_sensor
+              - delay: 10s
+              - logger.log: "Getting Automatic Baseline Configuration period"
+              - senseair.abc_get_period: senseair_sensor
+              - delay: 10s
+              - lambda: id(is_calibrating_co2) = false;
+
+button:
+  # Safe mode may be required for flashing sometimes, see https://community.home-assistant.io/t/esphome-flashing-over-wifi-does-not-work/357352/1
+  - platform: safe_mode
+    name: "Restart (Safe Mode)"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  reboot_timeout: 15min
+  # Manual_ip is required for my network because for some reason .local addresses don't resolve for HA OS inside a hyper-v vm
+  manual_ip:
+    static_ip: 192.168.1.229
+    gateway: 192.168.1.254
+    subnet: 255.255.255.0
+
+  # Enable hotspot Fallback (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Air Gradient Hotspot Fallback"
+    password: !secret fallback_ssid_password
+
+captive_portal:
+
+i2c:
+  sda: D2
+  scl: D1
+  frequency: 200kHz # Frequency needed changing to get wifi to work as per https://community.home-assistant.io/t/esphome-wifi-auth-expired/443790/24
+
+font:
+  - file: "gfonts://Roboto"
+    id: roboto
+    size: 12
+
+  - file: "gfonts://Roboto"
+    id: roboto_symbols
+    size: 12
+    glyphs: [
+      "\U000000B5", #µ
+      "\U00000067"  #g
+      ]
+
+  - file: "gfonts://Roboto"
+    id: roboto_medium
+    size: 16
+      
+  - file: "gfonts://Roboto"
+    id: roboto_large
+    size: 32
+
+    # Tip: You can get the codepoints as described in https://stackoverflow.com/questions/50408924/where-can-i-get-codes-of-material-icons
+  - file: "gfonts://Material+Symbols+Outlined"
+    id: face_icon_font
+    size: 48
+    glyphs: [
+      "\U0000E813", #sentiment_satisfied
+      "\U0000E811", #sentiment_dissatisfied
+      "\U0000E812"  #sentiment_neutral
+      ]
+
+graph:
+  - id: co2_graph
+    duration: 1h
+    border: false
+    width: 128
+    height: 64
+    max_value: 2000
+    min_value: 400
+    min_range: 400 # Set to stop extraneous logging
+    traces:
+      - sensor: co2
+        line_type: SOLID
+        line_thickness: 1
+      - sensor: co2_1000_ppm_for_graphing
+        line_type: DOTTED
+        line_thickness: 1
+
+# https://www.co2meter.com/blogs/news/co2-levels-at-home
+# ~400 ppm            background (normal) outdoor air levels
+# 400 - 1,000 ppm     typical levels found in occupied spaces with good air exchange
+# 1,000 - 2,000 ppm   levels associated with complaints of drowsiness and poor air
+# 2,000 - 5,000 ppm   levels associated with headaches, sleepiness, and stagnant, stale, stuffy air,
+#                     poor concentration, loss of attention, increased heart rate and slight nausea may also be present
+# >5,000 ppm          Exposure may lead to serious oxygen deprivation symptoms
+display:
+  - platform: ssd1306_i2c
+    id: device_display
+    address: 0x3c
+    # Contrast needed for this bug https://github.com/esphome/issues/issues/1575
+    contrast: 70%
+    model: "SH1106 128x64"
+    update_interval: 1s
+    # Pretty output inspired by https://forum.airgradient.com/t/new-wemos-board/251/9
+    pages:
+      - id: page1
+        # Removed it.rectangle(0, 0, 128, 64); because the display is not perfectly aligned
+        lambda: |-
+          it.printf(  6,  8, id(roboto_medium), "CO2 ");
+          it.printf( 92,  8, id(roboto_medium), TextAlign::TOP_RIGHT, "%5.0f", id(co2).state);
+          it.printf(120, 11, id(roboto), TextAlign::TOP_RIGHT, "ppm");
+          it.line( 0, 32, 128,  32);
+          it.line(64, 32,  64, 128);
+          it.printf(  4, 34, id(roboto), "C");
+          it.printf( 68, 34, id(roboto), "RH");
+          it.printf( 54, 40, id(roboto_medium), TextAlign::TOP_RIGHT, "%3.1f°", id(temp).state);
+          it.printf(120, 40, id(roboto_medium), TextAlign::TOP_RIGHT, "%2.0f%%", id(humidity).state);
+      - id: page2
+        # Removed it.rectangle(0, 0, 128, 64); because the display is not perfectly aligned
+        lambda: |-
+          it.printf(4, 4, id(roboto_medium), "PM 1: ");
+          it.printf(105, 4, id(roboto_medium), TextAlign::TOP_RIGHT, "%4.0f", id(pm1_0).state);
+          it.printf(124, 7, id(roboto_symbols), TextAlign::TOP_RIGHT, "µg");
+          it.printf(4, 23, id(roboto_medium), "PM 2.5: ");
+          it.printf(105, 23, id(roboto_medium), TextAlign::TOP_RIGHT, "%4.0f", id(pm2_5).state);
+          it.printf(124, 26, id(roboto_symbols), TextAlign::TOP_RIGHT, "µg");
+          it.printf(4, 42, id(roboto_medium), "PM 10: ");
+          it.printf(105, 42, id(roboto_medium), TextAlign::TOP_RIGHT, "%4.0f", id(pm10_0).state);
+          it.printf(124, 45, id(roboto_symbols), TextAlign::TOP_RIGHT, "µg");
+      - id: page3
+        # Removed it.rectangle(0, 0, 128, 64); because the display is not perfectly aligned
+        lambda: |-
+          if (id(co2).state <= 1000.0 && id(pm2_5).state < 35 ) {
+            it.printf(8, 4, id(face_icon_font), "%s", "\U0000E813");   //sentiment_satisfied
+            it.printf(76, 14, id(roboto_medium), "ALL");
+            it.printf(68, 34, id(roboto_medium), "GOOD");
+          } else if ((id(co2).state > 1000.0 && id(co2).state < 2000.0) || (id(pm2_5).state >= 35 && id(pm2_5).state <= 50)) {
+            it.printf(8, 4, id(face_icon_font), "%s", "\U0000E812");   //sentiment_neutral
+            it.printf(74, 14, id(roboto_medium), "NOT");
+            it.printf(68, 34, id(roboto_medium), "GOOD");
+          } else if (id(co2).state >= 2000.0 || (id(pm2_5).state > 50 && id(pm2_5).state < 1000000)) {
+            it.printf(8, 4, id(face_icon_font), "%s", "\U0000E811");   //sentiment_dissatisfied
+            it.printf(72, 14, id(roboto_medium), "NOT");
+            it.printf(68, 34, id(roboto_medium), "SAFE");
+          } else {
+            it.printf(8, 4, id(face_icon_font), "%s", "\U0000E812");   //sentiment_neutral
+            it.printf(68, 14, id(roboto_medium), "NOT");
+            it.printf(68, 34, id(roboto_medium), "KNOWN");
+          }
+      - id: page4
+        lambda: |-
+          it.printf( 4,  4, id(roboto), "CO2: %5.0f ppm", id(co2).state);
+          it.graph(0, 0, id(co2_graph));
+
+interval:
+  - interval: 10s
+    then:
+      - display.page.show_next: device_display
+      - component.update: device_display
+
+uart:
+  - rx_pin: D5
+    tx_pin: D6
+    baud_rate: 9600
+    id: uart_pm
+    
+  - rx_pin: D4
+    tx_pin: D3
+    baud_rate: 9600
+    id: uart_co2
+
+sensor:
+  - platform: sht3xd
+    temperature:
+      id: temp
+      name: "Temperature"
+    humidity:
+      id: humidity
+      name: "Humidity"
+    address: 0x44
+    update_interval: 5s
+
+  - platform: pmsx003
+    type: PMSX003
+    # Turns off the meter when not in use, then will spend 30s before the update_interval with it on before taking the measurement (it requires a warm up time)
+    update_interval: 120s
+    uart_id: uart_pm
+    pm_1_0:
+      id: pm1_0
+      name: "Particulate Matter <1.0µm Concentration"
+    pm_2_5:
+      id: pm2_5
+      name: "Particulate Matter <2.5µm Concentration"
+    pm_10_0:
+      id: pm10_0
+      name: "Particulate Matter <10.0µm Concentration"
+
+  - platform: senseair
+    uart_id: uart_co2
+    id: senseair_sensor
+    co2:
+      id: co2
+      name: "SenseAir CO2 Value"
+    update_interval: 30s
+    
+  # Used for graphing to show the 1000 ppm mark
+  - platform: template
+    id: co2_1000_ppm_for_graphing
+    internal: true
+    lambda: |-
+      return 1000.0;
+    update_interval: 60s
