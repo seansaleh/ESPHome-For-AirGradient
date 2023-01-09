@@ -239,7 +239,7 @@ sensor:
     co2:
       id: co2
       name: "SenseAir CO2 Value"
-    update_interval: 30s
+    update_interval: 60s
     
   # Used for graphing to show the 1000 ppm mark
   - platform: template
