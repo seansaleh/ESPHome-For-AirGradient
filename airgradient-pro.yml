@@ -212,6 +212,11 @@ sensor:
     temperature:
       id: temp
       name: "Temperature"
+      filters:
+      # Filter the data otherwise it tends to flip between two adjacent values constantly
+      - exponential_moving_average:
+          send_every: 4 # effectively updates every 20 seconds
+          alpha: 0.07 # The forget factor/alpha value of the filter. A higher value includes more details in the output while a lower value removes more noise. Defaults to 0.1.
     humidity:
       id: humidity
       name: "Humidity"
