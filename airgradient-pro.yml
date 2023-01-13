@@ -213,10 +213,10 @@ sensor:
       id: temp
       name: "Temperature"
       filters:
-      # Filter the data otherwise it tends to flip between two adjacent values constantly
-      - exponential_moving_average:
-          send_every: 4 # effectively updates every 20 seconds
-          alpha: 0.07 # The forget factor/alpha value of the filter. A higher value includes more details in the output while a lower value removes more noise. Defaults to 0.1.
+        # Filter the data otherwise it tends to flip between two adjacent values constantly
+        - exponential_moving_average:
+            send_every: 4 # effectively updates every 20 seconds
+            alpha: 0.07 # The forget factor/alpha value of the filter. A higher value includes more details in the output while a lower value removes more noise. Defaults to 0.1.
     humidity:
       id: humidity
       name: "Humidity"
@@ -244,6 +244,13 @@ sensor:
     co2:
       id: co2
       name: "SenseAir CO2 Value"
+      filters:
+        # Set a floor to the CO2 value. The lowest possible real value is 400, and that's what the sensor calibrates to
+        # We use a floor of 300 to make it clear that something did go wrong, but without throwing off averages too much
+        # This is needed because sometimes the sensor returns values like 0 or other very low values when powering on or off.
+        - lambda: |-
+            if (x >= 300) return x;
+            else return 300;
     update_interval: 60s
     
   # Used for graphing to show the 1000 ppm mark
