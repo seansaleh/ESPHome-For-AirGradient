@@ -203,7 +203,7 @@ display:
           it.graph(0, 0, id(co2_graph));
 
 interval:
-  - interval: 7s
+  - interval: 4s
     then:
       - display.page.show_next: device_display
       - component.update: device_display
