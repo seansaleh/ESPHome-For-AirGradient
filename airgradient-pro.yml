@@ -48,6 +48,18 @@ switch:
               - senseair.abc_get_period: senseair_sensor
               - delay: 10s
               - lambda: id(is_calibrating_co2) = false;
+  # Allow turning off CO2's sensor's ABC (Automatic Baseline Calibration) logic,
+  # because I've found very agressive drift when keeping the device inside
+  - platform: template
+    name: "Automatic CO2 Baseline Calibration"
+    id: "switch_co2_abc"
+    assumed_state: true
+    turn_on_action:
+      then:
+        - senseair.abc_enable: senseair_sensor
+    turn_off_action:
+      then:
+        - senseair.abc_disable: senseair_sensor
 
 button:
   # Safe mode may be required for flashing sometimes, see https://community.home-assistant.io/t/esphome-flashing-over-wifi-does-not-work/357352/1
