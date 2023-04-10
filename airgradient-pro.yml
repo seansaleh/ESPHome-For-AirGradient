@@ -69,7 +69,7 @@ button:
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
-  reboot_timeout: 15min
+  reboot_timeout: 0s # Otherwise if there is no connection then the device boot loops till there is. If you want that set this to be 15m
   # Manual_ip is required for my network because for some reason .local addresses don't resolve for HA OS inside a hyper-v vm
   manual_ip:
     static_ip: 192.168.1.229
